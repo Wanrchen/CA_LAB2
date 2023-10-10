@@ -257,9 +257,72 @@ int main()
     RF myRF;
     INSMem myInsMem;
     DataMem myDataMem;
+    IFStruct IF = {
+            0, //PC
+            0, //nop，only IF ff is init with 0 nop;
+    };
+
+    IDStruct ID = {
+            0, //Instr
+            1, //nop
+    };
+
+    EXStruct EX = {
+            0, //Read_data1
+            0, //Read_data2
+            0, //Imm
+            0, //Rs
+            0, //Rt
+            0, //Wrt_reg_addr
+            0, //is_I_type
+            0, //rd_mem
+            0, //wrt_mem
+            0, //alu_op
+            0, //wrt_enable
+            1, //nop
+
+
+    };
+
+    MEMStruct MEM = {
+            0, //ALUresult
+            0, //Store_data
+            0, //Rs
+            0, //Rt
+            0, //Wrt_reg_addr
+            0, //rd_mem
+            0, //wrt_mem
+            0, //wrt_enable
+            1, //nop
+
+
+    };
+    WBStruct WB = {
+            0, //Wrt_data
+            0, //Rs
+            0, //Rt
+            0, //Wrt_reg_addr
+            0, //wrt_enable
+            1, //nop
+
+    };
+
+    stateStruct state = {
+            IF,
+            ID,
+            EX ,
+            MEM,
+            WB,
+    };
+    stateStruct newState = state;
 			
              
     while (1) {
+        if (state.WB.nop == 0) {
+            if (state.WB.wrt_enable) {
+                myRF.writeRF(state.WB.Wrt_reg_addr, state.WB.Wrt_data);
+            }
+        }
 
         /* --------------------- WB stage --------------------- */
 
