@@ -3,7 +3,9 @@
 #include<vector>
 #include<bitset>
 #include<fstream>
+
 using namespace std;
+
 
 #define MemSize 1000 // memory size, in reality, the memory size should be 2^32, but for this lab csa23, for the space resaon, we keep it as this large number, but the memory is still 32-bit addressable.
 
@@ -249,7 +251,17 @@ void printState(stateStruct state, int cycle)
     else cout<<"Unable to open file";
     printstate.close();
 }
- 
+//use for lw and sw to make 16b immediarte to an 32b address
+bitset<32> signedExtension(bitset<16> immediate) {
+    bitset<32> result;
+    if (immediate[15] == 1) {
+        result = bitset<32>(0xffffffff);
+    }
+    for (int i = 0; i < 16; i++) {
+        result[i] = immediate[i];
+    }
+    return result;
+}
 
 int main()
 {
@@ -325,6 +337,7 @@ int main()
         if (state.WB.nop == 0) {
             if (state.WB.wrt_enable) {
                 myRF.writeRF(state.WB.Wrt_reg_addr, state.WB.Wrt_data);
+                cout << "WB"<<cycle<< endl;
             }
         }
 
@@ -336,12 +349,87 @@ int main()
             newState.WB.wrt_enable = state.MEM.wrt_enable;
             newState.WB.Wrt_reg_addr = state.MEM.Wrt_reg_addr;
             newState.WB.Wrt_data = state.MEM.ALUresult;
+            if (newState.MEM.rd_mem) {
+                newState.WB.Wrt_data = myDataMem.readDataMem(state.MEM.ALUresult);
+            }
+            if (newState.MEM.wrt_mem) {
+                myDataMem.writeDataMem(state.MEM.ALUresult,state.MEM.Store_data);
+            }//not sure
+            cout << "MEM"<<cycle<< endl;
 
         }
+        newState.WB.nop = state.MEM.nop;
 
 
 
         /* --------------------- EX stage --------------------- */
+        if(state.EX.nop==0) {
+            int isItype = state.EX.is_I_type;
+            int wriEnable = state.EX.wrt_enable;
+            int aluOP = state.EX.alu_op;
+            int readMem = state.EX.rd_mem;
+            int writeMem = state.EX.wrt_mem;
+            bitset<5> rs = state.EX.Rs;
+            bitset<5> rt = state.EX.Rt;
+            bitset<5> writeR = state.EX.Wrt_reg_addr;
+            bitset<32> readData1 = state.EX.Read_data1;
+            bitset<32> readData2 = state.EX.Read_data2;
+            //rtype
+            if(isItype==0){
+                //addu
+                unsigned long op1 =myRF.readRF(rs).to_ulong();
+                unsigned long op2 = myRF.readRF(rt).to_ulong();
+                if(aluOP==1){
+                    newState.MEM.ALUresult = bitset<32>(op1 + op2);
+                }
+                //subu
+                else if(aluOP==0){
+                    newState.MEM.ALUresult = bitset<32>(op1 - op2);
+                }
+            }
+            //itype
+            else{
+                //in I type ALUresult store the destination address.
+                //lw
+                cout<<"Itype"<<readMem<<writeMem<<endl;
+                if(readMem==1){
+                    int base = state.EX.Read_data1.to_ulong();
+                    unsigned long imm = signedExtension(state.EX.Imm).to_ulong();
+                    bitset<32> address =bitset<32>(base+imm);
+                    newState.MEM.ALUresult = address;
+                }
+                //sw
+                if(writeMem==1){
+                    int base = state.EX.Read_data1.to_ulong();
+                    unsigned long imm = signedExtension(state.EX.Imm).to_ulong();
+                    bitset<32> address =bitset<32>(base+imm);
+                    newState.MEM.ALUresult = address;
+                    newState.MEM.Store_data = myRF.readRF(rt);
+                }
+            }
+            //dealing with raw hazard using forwarding
+            //ex-ex forwarding
+            newState.MEM.wrt_enable = wriEnable;
+            newState.MEM.Rs = rs;
+            newState.MEM.Rt = rt;
+            newState.MEM.Wrt_reg_addr = writeR;
+            newState.MEM.rd_mem = readMem;
+            newState.MEM.wrt_mem = writeMem;
+            cout << "EX" <<cycle<< endl;
+            cout<<newState.MEM.Wrt_reg_addr<<endl;
+
+        }
+        newState.MEM.nop = state.EX.nop;//to the next state.
+
+
+
+
+
+
+
+
+
+
 
      
           
@@ -379,10 +467,9 @@ int main()
                 bitset<16> imm = bitset<16>(instr.substr(16, 16));
                 newState.EX.Rs = rsi;
                 newState.EX.Rt = rti;
-                newState.EX.is_I_type = true;
+                newState.EX.is_I_type = 1;
                 newState.EX.Imm = imm;
                 newState.EX.Read_data1 = myRF.readRF(rsi);
-
 
                 if(opcode=="100011"){//lw
                     newState.EX.Wrt_reg_addr = rti;
@@ -391,21 +478,31 @@ int main()
                     newState.EX.alu_op = 1;
                 }
                 //sw
-                else if(opcode=="101101"){
+                else if(opcode=="101011"){
                     newState.EX.Read_data2 = myRF.readRF(rti);
                     newState.EX.wrt_mem = 1;
                     newState.EX.wrt_enable = 0;
                     newState.EX.alu_op = 1;
 
                 }
-                //bne
+                //bne resolve here to handle hazard
                 else if(opcode=="000101"){
                     newState.EX.wrt_enable = 0;
                     newState.EX.rd_mem = 0;
                     newState.EX.wrt_mem = 0;
+                    if(myRF.readRF(rsi)!=myRF.readRF(rti)){
+                        unsigned long extendImm = bitset<32>(signedExtension(imm)).to_ulong() * 4;
+                        newState.IF.PC = state.IF.PC.to_ulong() + extendImm+4;
+                    }
+                    printState(newState, cycle);
+                    state = newState;
+                    cycle++;
+                    continue;
                 }
             }
+            cout << "ID"<<cycle << endl;
         }
+        newState.EX.nop = state.ID.nop;
 
 
 
@@ -414,10 +511,12 @@ int main()
         if (state.IF.nop == 0) {
             newState.ID.Instr = myInsMem.readInstr(state.IF.PC);
             if (newState.ID.Instr == 0xffffffff) {//halt
-                state.IF.nop = newState.IF.nop = 1;
+                newState.IF.nop = 1;
+                state.IF.nop = 1;
             } else {
                 newState.IF.PC = state.IF.PC.to_ulong() + 4;
             }
+            cout << "IF" <<cycle<< endl;
         }
         newState.ID.nop = state.IF.nop;
 
