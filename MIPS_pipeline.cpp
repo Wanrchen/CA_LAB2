@@ -314,33 +314,112 @@ int main()
             MEM,
             WB,
     };
+    int cycle  = 0;
     stateStruct newState = state;
 			
              
     while (1) {
+
+
+        /* --------------------- WB stage --------------------- */
         if (state.WB.nop == 0) {
             if (state.WB.wrt_enable) {
                 myRF.writeRF(state.WB.Wrt_reg_addr, state.WB.Wrt_data);
             }
         }
 
-        /* --------------------- WB stage --------------------- */
-
-
 
         /* --------------------- MEM stage --------------------- */
-      
+        if(state.MEM.nop==0){
+            newState.WB.Rs = state.MEM.Rs;
+            newState.WB.Rt = state.MEM.Rt;
+            newState.WB.wrt_enable = state.MEM.wrt_enable;
+            newState.WB.Wrt_reg_addr = state.MEM.Wrt_reg_addr;
+            newState.WB.Wrt_data = state.MEM.ALUresult;
+
+        }
+
 
 
         /* --------------------- EX stage --------------------- */
+
      
           
 
         /* --------------------- ID stage --------------------- */
+        if(state.ID.nop==0){
+            string instr = state.ID.Instr.to_string();
+            string opcode = instr.substr(0,6);
+            //judge R type for addu and subu
+            if(opcode=="000000"){
+                bitset<5> rs = bitset<5>(instr.substr(6, 5));
+                bitset<5> rt = bitset<5>(instr.substr(11, 5));
+                bitset<5> rd = bitset<5>(instr.substr(16, 5));
+                string funcCode = instr.substr(26, 6);
+                newState.EX.Rs = rs;
+                newState.EX.Rt = rt;
+                newState.EX.Wrt_reg_addr = rd;
+                newState.EX.rd_mem = 0;
+                newState.EX.wrt_mem = 0;
+                newState.EX.is_I_type = 0;
+                newState.EX.wrt_enable = 1;
+                if(funcCode=="100001"){
+                    newState.EX.alu_op = 1;
+                }
+                else if(funcCode=="100011"){
+                    newState.EX.alu_op = 0;
+
+                }
+
+            }
+            //the rest is I type
+            else{
+                bitset<5> rsi = bitset<5>(instr.substr(6, 5));
+                bitset<5> rti = bitset<5>(instr.substr(11, 5));
+                bitset<16> imm = bitset<16>(instr.substr(16, 16));
+                newState.EX.Rs = rsi;
+                newState.EX.Rt = rti;
+                newState.EX.is_I_type = true;
+                newState.EX.Imm = imm;
+                newState.EX.Read_data1 = myRF.readRF(rsi);
+
+
+                if(opcode=="100011"){//lw
+                    newState.EX.Wrt_reg_addr = rti;
+                    newState.EX.rd_mem = 1;
+                    newState.EX.wrt_enable = 1;
+                    newState.EX.alu_op = 1;
+                }
+                //sw
+                else if(opcode=="101101"){
+                    newState.EX.Read_data2 = myRF.readRF(rti);
+                    newState.EX.wrt_mem = 1;
+                    newState.EX.wrt_enable = 0;
+                    newState.EX.alu_op = 1;
+
+                }
+                //bne
+                else if(opcode=="000101"){
+                    newState.EX.wrt_enable = 0;
+                    newState.EX.rd_mem = 0;
+                    newState.EX.wrt_mem = 0;
+                }
+            }
+        }
+
 
 
         
         /* --------------------- IF stage --------------------- */
+        if (state.IF.nop == 0) {
+            newState.ID.Instr = myInsMem.readInstr(state.IF.PC);
+            if (newState.ID.Instr == 0xffffffff) {//halt
+                state.IF.nop = newState.IF.nop = 1;
+            } else {
+                newState.IF.PC = state.IF.PC.to_ulong() + 4;
+            }
+        }
+        newState.ID.nop = state.IF.nop;
 
 
              
@@ -349,7 +428,9 @@ int main()
         
         printState(newState, cycle); //print states after executing cycle 0, cycle 1, cycle 2 ... 
        
-        state = newState; /*** The end of the cycle and updates the current state with the values calculated in this cycle. csa23 ***/ 
+        state = newState; /*** The end of the cycle and updates the current state with the values calculated in this cycle. csa23 ***/
+
+        cycle++;
                 	
     }
     
