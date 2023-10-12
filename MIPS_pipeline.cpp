@@ -339,6 +339,7 @@ int main()
         if (state.WB.nop == 0) {
             if (state.WB.wrt_enable) {
                 myRF.writeRF(state.WB.Wrt_reg_addr, state.WB.Wrt_data);
+
                 cout << "WB"<<cycle<< endl;
             }
         }
@@ -376,6 +377,41 @@ int main()
             bitset<5> writeR = state.EX.Wrt_reg_addr;
             bitset<32> readData1 = state.EX.Read_data1;
             bitset<32> readData2 = state.EX.Read_data2;
+
+            //dealing with raw hazard using forwarding
+            //we need ex-ex forwarding and MEM-EX forwarding;
+            //judge the type
+            //we need judge the loadadd one which need stall in ID stage,so we can stop the ex stage
+            bitset<32> ExdataToBeForwarding = newState.MEM.ALUresult;
+            bitset<32> MemdataToBeForwarding = state.WB.Wrt_data;
+            bool isAddAddDOccur = (!(state.MEM.rd_mem))&&(!(state.MEM.wrt_mem)&&(state.MEM.wrt_enable));//as the slides says
+            bool isAddLoadDOccur = (!(state.MEM.rd_mem))&&(!(state.MEM.wrt_mem)&&(state.MEM.wrt_enable)&&(readMem));
+            //exexF
+            if(isAddAddDOccur||isAddLoadDOccur) {
+                if (state.MEM.Wrt_reg_addr == state.EX.Rs) {
+                    cout<<"exEX working"<<endl;
+                    readData1 = ExdataToBeForwarding;
+                }
+                if (state.MEM.Wrt_reg_addr == state.EX.Rt) {
+                    if ((state.EX.wrt_mem) || ((!state.EX.is_I_type) && (state.EX.wrt_enable))) {
+                        readData2 = ExdataToBeForwarding;
+                        cout<<"exEX working"<<endl;
+                    }
+                }
+            }
+            //memExF
+            if(state.WB.wrt_enable){
+                if (state.WB.Wrt_reg_addr == state.EX.Rs) {
+                    cout<<"memEX working"<<endl;
+                    readData1 = MemdataToBeForwarding;
+                    cout<<MemdataToBeForwarding<<endl;                }
+                if (state.WB.Wrt_reg_addr == state.EX.Rt) {
+                    cout<<"memEX working"<<endl;
+                    readData2 = MemdataToBeForwarding;
+                }
+            }
+
+
             //rtype
             if(isItype==0){
                 //addu
@@ -396,6 +432,7 @@ int main()
                 cout<<"Itype"<<readMem<<writeMem<<endl;
                 if(readMem==1){
                     int base = readData1.to_ulong();
+                    cout<<"write base:"<<base<<endl;
                     unsigned long imm = signedExtensionImm(state.EX.Imm).to_ulong();
                     bitset<32> address =bitset<32>(base+imm);
                     newState.MEM.ALUresult = address;
@@ -403,14 +440,15 @@ int main()
                 //sw
                 if(writeMem==1){
                     int base = readData1.to_ulong();
+                    cout<<"write base:"<<base<<endl;
                     unsigned long imm = signedExtensionImm(state.EX.Imm).to_ulong();
                     bitset<32> address =bitset<32>(base+imm);
                     newState.MEM.ALUresult = address;
                     newState.MEM.Store_data = readData2;
                 }
             }
-            //dealing with raw hazard using forwarding
-            //ex-ex forwarding
+
+
             newState.MEM.wrt_enable = wriEnable;
             newState.MEM.Rs = rs;
             newState.MEM.Rt = rt;
@@ -476,17 +514,21 @@ int main()
                 newState.EX.Imm = imm;
                 newState.EX.Read_data1 = myRF.readRF(rsi);
                 newState.EX.Read_data2 = myRF.readRF(rti);
+                cout<<newState.EX.Read_data2<<endl;
 
                 if(opcode=="100011"){//lw
                     newState.EX.Wrt_reg_addr = rti;
                     newState.EX.rd_mem = 1;
+                    newState.EX.wrt_mem = 0;
                     newState.EX.wrt_enable = 1;
                     newState.EX.alu_op = 1;
                 }
                 //sw
                 else if(opcode=="101011"){
+
                     newState.EX.wrt_mem = 1;
                     newState.EX.wrt_enable = 0;
+                    newState.EX.rd_mem = 0;
                     newState.EX.alu_op = 1;
 
                 }
@@ -518,6 +560,21 @@ int main()
                 }
             }
             cout << "ID"<<cycle << endl;
+            //we need handle stall here
+            bool isLoadAddOccur = state.EX.rd_mem;
+            if(isLoadAddOccur){
+                if((state.EX.Wrt_reg_addr == newState.EX.Rs)||(state.EX.Wrt_reg_addr == newState.EX.Rt)) {
+                    cout<<"stall happen"<<endl;
+                    newState.EX.nop = 1;
+                    newState.ID = state.ID;
+                    newState.IF = state.IF;
+                    printState(newState, cycle);
+                    state = newState;
+                    cycle++;
+                    continue;
+                }
+            }
+
         }
         newState.EX.nop = state.ID.nop;
 
@@ -527,6 +584,7 @@ int main()
         /* --------------------- IF stage --------------------- */
         if (state.IF.nop == 0) {
             newState.ID.Instr = myInsMem.readInstr(state.IF.PC);
+            cout<<newState.ID.Instr<<endl;
             if (newState.ID.Instr == 0xffffffff) {//halt
                 newState.IF.nop = 1;
                 state.IF.nop = 1;
@@ -542,7 +600,9 @@ int main()
         if (state.IF.nop && state.ID.nop && state.EX.nop && state.MEM.nop && state.WB.nop)
             break;
         
-        printState(newState, cycle); //print states after executing cycle 0, cycle 1, cycle 2 ... 
+        printState(newState, cycle); //print states after executing cycle 0, cycle 1, cycle 2 ...
+
+        cout<<newState.ID.Instr<<endl;
        
         state = newState; /*** The end of the cycle and updates the current state with the values calculated in this cycle. csa23 ***/
 
