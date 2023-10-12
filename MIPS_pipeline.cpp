@@ -252,15 +252,15 @@ void printState(stateStruct state, int cycle)
     printstate.close();
 }
 //use for lw and sw to make 16b immediarte to an 32b address
-bitset<32> signedExtensionImm(bitset<16> immediate) {
+long signedExtensionImm(bitset<16> immediate) {
     bool sign = immediate[15];
     long signed_related_addr;
     if(sign){
-        signed_related_addr = -((~immediate).to_ulong() + 1);
+        signed_related_addr = -((~immediate).to_ulong()+1);
     }else{
         signed_related_addr = immediate.to_ulong();
     }
-    return bitset<32>(signed_related_addr);
+    return signed_related_addr;
 
 }
 
@@ -404,7 +404,8 @@ int main()
                 if (state.WB.Wrt_reg_addr == state.EX.Rs) {
                     cout<<"memEX working"<<endl;
                     readData1 = MemdataToBeForwarding;
-                    cout<<MemdataToBeForwarding<<endl;                }
+                    //cout<<MemdataToBeForwarding<<endl;
+                    }
                 if (state.WB.Wrt_reg_addr == state.EX.Rt) {
                     cout<<"memEX working"<<endl;
                     readData2 = MemdataToBeForwarding;
@@ -423,25 +424,26 @@ int main()
                 //subu
                 else if(aluOP==0){
                     newState.MEM.ALUresult = bitset<32>(op1 - op2);
+                    cout<<"result: "<<newState.MEM.ALUresult<<endl;
                 }
             }
             //itype
             else{
                 //in I type ALUresult store the destination address.
                 //lw
-                cout<<"Itype"<<readMem<<writeMem<<endl;
+                //cout<<"Itype"<<readMem<<writeMem<<endl;
                 if(readMem==1){
                     int base = readData1.to_ulong();
-                    cout<<"write base:"<<base<<endl;
-                    unsigned long imm = signedExtensionImm(state.EX.Imm).to_ulong();
+                    //cout<<"write base:"<<base<<endl;
+                    long imm = signedExtensionImm(state.EX.Imm);
                     bitset<32> address =bitset<32>(base+imm);
                     newState.MEM.ALUresult = address;
                 }
                 //sw
                 if(writeMem==1){
                     int base = readData1.to_ulong();
-                    cout<<"write base:"<<base<<endl;
-                    unsigned long imm = signedExtensionImm(state.EX.Imm).to_ulong();
+                   // cout<<"write base:"<<base<<endl;
+                    long imm = signedExtensionImm(state.EX.Imm);
                     bitset<32> address =bitset<32>(base+imm);
                     newState.MEM.ALUresult = address;
                     newState.MEM.Store_data = readData2;
@@ -456,7 +458,7 @@ int main()
             newState.MEM.rd_mem = readMem;
             newState.MEM.wrt_mem = writeMem;
             cout << "EX" <<cycle<< endl;
-            cout<<newState.MEM.Wrt_reg_addr<<endl;
+            //cout<<newState.MEM.Wrt_reg_addr<<endl;
 
         }
         newState.MEM.nop = state.EX.nop;//to the next state.
@@ -514,7 +516,7 @@ int main()
                 newState.EX.Imm = imm;
                 newState.EX.Read_data1 = myRF.readRF(rsi);
                 newState.EX.Read_data2 = myRF.readRF(rti);
-                cout<<newState.EX.Read_data2<<endl;
+                //cout<<newState.EX.Read_data2<<endl;
 
                 if(opcode=="100011"){//lw
                     newState.EX.Wrt_reg_addr = rti;
@@ -534,21 +536,19 @@ int main()
                 }
                 //bne resolve here to handle hazard
                 else if(opcode=="000101"){
-                    cout<<instr<<endl;
+                    //<<instr<<endl;
                     newState.EX.wrt_enable = 0;
                     newState.EX.rd_mem = 0;
                     newState.EX.wrt_mem = 0;
-                    newState.IF.nop=1;
 
                     bitset<32>currentPC = state.IF.PC;
-                    cout<<currentPC<<endl;
+                    //cout<<currentPC<<endl;
                     if( newState.EX.Read_data1!= newState.EX.Read_data2){
+                        cout<<"datas are:"<<newState.EX.Read_data1<<' '<<newState.EX.Read_data2<<endl;
                         newState.ID.nop = 1;//kill the old instr
                         newState.EX.nop = 0;//make other stage countinue to work.
-                        newState.MEM.nop = 0;
-                        newState.WB.nop = 0;
-                        newState.IF.nop = 0;
-                        unsigned long offsetAddress = signedExtensionImm(imm).to_ulong() * 4;
+                        long offsetAddress = signedExtensionImm(imm) * 4;
+                        cout<<signedExtensionImm(imm)<<endl;
                         newState.IF.PC = currentPC.to_ulong()+ offsetAddress;
                         printState(newState, cycle);
                         state = newState;
@@ -584,14 +584,14 @@ int main()
         /* --------------------- IF stage --------------------- */
         if (state.IF.nop == 0) {
             newState.ID.Instr = myInsMem.readInstr(state.IF.PC);
-            cout<<newState.ID.Instr<<endl;
+            //cout<<newState.ID.Instr<<endl;
             if (newState.ID.Instr == 0xffffffff) {//halt
                 newState.IF.nop = 1;
                 state.IF.nop = 1;
             } else {
                 newState.IF.PC = state.IF.PC.to_ulong() + 4;
             }
-            cout << "IF:" <<  newState.ID.Instr<< endl;
+            //cout << "IF:" <<  newState.ID.Instr<< endl;
         }
         newState.ID.nop = state.IF.nop;
 
@@ -602,14 +602,13 @@ int main()
         
         printState(newState, cycle); //print states after executing cycle 0, cycle 1, cycle 2 ...
 
-        cout<<newState.ID.Instr<<endl;
+        //<<newState.ID.Instr<<endl;
        
         state = newState; /*** The end of the cycle and updates the current state with the values calculated in this cycle. csa23 ***/
 
         cycle++;
-                	
     }
-    
+    cout<<cycle<<endl;
     myRF.outputRF(); // dump RF;	
 	myDataMem.outputDataMem(); // dump data mem 
 	
