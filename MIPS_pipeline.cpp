@@ -345,6 +345,7 @@ int main()
         }
 
 
+
         /* --------------------- MEM stage --------------------- */
         if(state.MEM.nop==0){
             newState.WB.Rs = state.MEM.Rs;
@@ -384,42 +385,47 @@ int main()
             //we need judge the loadadd one which need stall in ID stage,so we can stop the ex stage
             bitset<32> ExdataToBeForwarding = newState.MEM.ALUresult;
             bitset<32> MemdataToBeForwarding = state.WB.Wrt_data;
+            //load load hazard?
             bool isAddAddDOccur = (!(state.MEM.rd_mem))&&(!(state.MEM.wrt_mem)&&(state.MEM.wrt_enable));//as the slides says
-            bool isAddLoadDOccur = (!(state.MEM.rd_mem))&&(!(state.MEM.wrt_mem)&&(state.MEM.wrt_enable)&&(readMem));
+            bool isAddLoadDOccur = (!(state.MEM.rd_mem))&&(!(state.MEM.wrt_mem)&&(state.MEM.wrt_enable));
+            if(state.WB.wrt_enable&&!state.WB.nop){
+                if (state.WB.Wrt_reg_addr == state.EX.Rs) {
+                    cout<<"memEX working"<<MemdataToBeForwarding<<endl;
+                    readData1 = MemdataToBeForwarding;
+                    //cout<<MemdataToBeForwarding<<endl;
+                }
+                if (state.WB.Wrt_reg_addr == state.EX.Rt) {
+                    cout<<"memEX working"<<MemdataToBeForwarding<<endl;
+                    readData2 = MemdataToBeForwarding;
+                }
+            }
             //exexF
-            if(isAddAddDOccur||isAddLoadDOccur) {
+            if(isAddAddDOccur||isAddLoadDOccur&&!state.WB.nop) {
                 if (state.MEM.Wrt_reg_addr == state.EX.Rs) {
-                    cout<<"exEX working"<<endl;
+                    cout<<"exEX working"<<readData1<<endl;
                     readData1 = ExdataToBeForwarding;
                 }
                 if (state.MEM.Wrt_reg_addr == state.EX.Rt) {
                     if ((state.EX.wrt_mem) || ((!state.EX.is_I_type) && (state.EX.wrt_enable))) {
                         readData2 = ExdataToBeForwarding;
-                        cout<<"exEX working"<<endl;
+                        cout<<"exEX working"<<readData2<<endl;
                     }
                 }
+                //尝试直接写入？
+                //if(writeR==state.MEM.Wrt_reg_addr){
+                    //cout<<"?"<<endl;
+                    //newState.MEM.ALUresult = state.MEM.ALUresult;
+                //}
             }
             //memExF
-            if(state.WB.wrt_enable){
-                if (state.WB.Wrt_reg_addr == state.EX.Rs) {
-                    cout<<"memEX working"<<endl;
-                    readData1 = MemdataToBeForwarding;
-                    //cout<<MemdataToBeForwarding<<endl;
-                    }
-                if (state.WB.Wrt_reg_addr == state.EX.Rt) {
-                    cout<<"memEX working"<<endl;
-                    readData2 = MemdataToBeForwarding;
-                }
-            }
-
-
             //rtype
             if(isItype==0){
                 //addu
-                unsigned long op1 =readData1.to_ulong();
-                unsigned long op2 = readData2.to_ulong();
+                int op1 = readData1.to_ulong();
+                int op2 = readData2.to_ulong();
                 if(aluOP==1){
                     newState.MEM.ALUresult = bitset<32>(op1 + op2);
+                    cout<<"result: "<<newState.MEM.ALUresult<<endl;
                 }
                 //subu
                 else if(aluOP==0){
@@ -561,9 +567,9 @@ int main()
             }
             cout << "ID"<<cycle << endl;
             //we need handle stall here
-            bool isLoadAddOccur = state.EX.rd_mem;
+            bool isLoadAddOccur = (state.EX.rd_mem)&&(!state.EX.nop);//that might be the reason trigger non-stop loop
             if(isLoadAddOccur){
-                if((state.EX.Wrt_reg_addr == newState.EX.Rs)||(state.EX.Wrt_reg_addr == newState.EX.Rt)) {
+                if((state.EX.Wrt_reg_addr == newState.EX.Rs)||(state.EX.Wrt_reg_addr == newState.EX.Rt)&&(!newState.EX.is_I_type)){
                     cout<<"stall happen"<<endl;
                     newState.EX.nop = 1;
                     newState.ID = state.ID;
@@ -586,8 +592,8 @@ int main()
             newState.ID.Instr = myInsMem.readInstr(state.IF.PC);
             //cout<<newState.ID.Instr<<endl;
             if (newState.ID.Instr == 0xffffffff) {//halt
-                newState.IF.nop = 1;
                 state.IF.nop = 1;
+                newState.IF.nop = 1;
             } else {
                 newState.IF.PC = state.IF.PC.to_ulong() + 4;
             }
